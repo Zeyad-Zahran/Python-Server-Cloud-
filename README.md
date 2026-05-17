@@ -1,122 +1,93 @@
-markdown
-# ☁️ Simple Cloud Server API v2.0
 
-A powerful, lightweight REST API for self-hosted cloud storage with automatic Ngrok tunnel integration.
+# ☁️ Professional Cloud Server API v2.0
 
-## ⚡ Quick Install & Run
+Self-Hosted File Storage REST API with Automatic Ngrok Integration
 
-```bash
-# 1. Install dependencies
+## Features
+- Public HTTPS Access via Ngrok
+- File Upload / Download API
+- Folder Management
+- Multiple File Upload
+- Disk Space Monitoring
+- REST API Endpoints
+- .env Configuration
+- Cross Platform Support
+- Lightweight & Fast
+
+## Installation
+
+1. Install Python 3.10+
+2. Install dependencies:
+
 pip install flask flask-cors werkzeug psutil pyngrok Pillow python-dotenv
 
-# 2. Run server
+3. Run the server:
+
 python app.py
-🔑 Ngrok Token Setup
-Where to put your Ngrok token:
-Method 1: .env file (Recommended)
 
-bash
-# Create .env file
-echo "NGROK_AUTH_TOKEN=your_token_here" > .env
-Method 2: Environment variable
+## Ngrok Setup
 
-bash
-# Windows
-set NGROK_AUTH_TOKEN=your_token_here
+Step 1:
+Create a free account:
+https://ngrok.com
 
-# Linux/Mac
-export NGROK_AUTH_TOKEN=your_token_here
-Method 3: Hardcode in app.py
+Step 2:
+Copy your Auth Token:
+https://dashboard.ngrok.com/get-started/your-authtoken
 
-python
-# Find this line in app.py
-NGROK_AUTH_TOKEN = os.getenv('NGROK_AUTH_TOKEN', 'your_token_here')
-Get your free Ngrok token:
-Sign up at https://ngrok.com
+Step 3:
+Create a .env file:
 
-Go to https://dashboard.ngrok.com/get-started/your-authtoken
+NGROK_AUTH_TOKEN=your_token_here
+NGROK_ENABLED=true
+SERVER_PORT=5000
 
-Copy your authtoken
+Step 4:
+Run the server:
 
-Paste in .env file
+python app.py
 
-📡 API Endpoints
-Method	Endpoint	Description
-GET	/api/storage	Disk space info
-GET	/api/files	List files
-POST	/api/upload	Upload file
-POST	/api/upload/multiple	Upload files
-GET	/api/files/{id}	Download file
-DELETE	/api/files/{id}	Delete file
-GET	/api/folders	List folders
-POST	/api/folders	Create folder
-DELETE	/api/folders/{id}	Delete folder
-GET	/api/ngrok/status	Tunnel status
-POST	/api/ngrok/reconnect	Reconnect tunnel
-GET	/api/docs	Full API docs
-🚀 Usage Examples
-Python
-python
-import requests
+Your public server URL will appear automatically.
 
-BASE = "https://your-ngrok-url.ngrok-free.app"
+## API Endpoints
 
-# Upload
-requests.post(f"{BASE}/api/upload", files={"file": open("img.jpg","rb")})
+GET    /api/storage
+GET    /api/files
+POST   /api/upload
+POST   /api/upload/multiple
+GET    /api/files/{id}
+DELETE /api/files/{id}
+GET    /api/folders
+POST   /api/folders
+DELETE /api/folders/{id}
+GET    /api/ngrok/status
+POST   /api/ngrok/reconnect
 
-# Storage
-requests.get(f"{BASE}/api/storage").json()
-cURL
-bash
-# Upload
+## Example Usage
+
+Python:
+requests.post(f"{BASE}/api/upload", files={"file": open("photo.jpg","rb")})
+
+cURL:
 curl -X POST YOUR_URL/api/upload -F "file=@photo.jpg"
 
-# Storage
-curl YOUR_URL/api/storage
+JavaScript:
+fetch('YOUR_URL/api/upload', {method:'POST', body:formData})
 
-# API Docs
-curl YOUR_URL/api/docs
-JavaScript
-javascript
-const formData = new FormData();
-formData.append('file', fileInput.files[0]);
-fetch('YOUR_URL/api/upload', {method:'POST', body:formData});
-⚙️ Configuration (.env)
-Variable	Default	Description
-NGROK_AUTH_TOKEN	-	Your ngrok token
-NGROK_ENABLED	true	Auto-start ngrok
-NGROK_REGION	us	us/eu/ap/au/sa/jp/in
-SERVER_PORT	5000	Server port
-MAX_FILE_SIZE	500	Max upload (MB)
-UPLOAD_FOLDER	uploads	Storage path
-🎯 Features
-✅ Auto Ngrok tunnel
+## Security Recommendations
+- Add JWT Authentication
+- Use HTTPS
+- Enable Rate Limiting
+- Restrict File Types
+- Add API Keys
 
-✅ Full REST API
+## Project Structure
 
-✅ File upload/download
-
-✅ Folder management
-
-✅ Disk monitoring
-
-✅ File search
-
-✅ Interactive API docs at /api/docs
-
-✅ .env configuration
-
-✅ Multiple file upload
-
-✅ File type filtering
-
-✅ Checksum verification
-
-🔒 Security
-CORS enabled for cross-origin
-
-Add authentication as needed
-
-Use HTTPS via ngrok
-
-Rate limiting recommended for production
+cloud-server/
+│
+├── app.py
+├── .env
+├── requirements.txt
+├── uploads/
+├── logs/
+└── README.md
