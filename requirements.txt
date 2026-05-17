@@ -1,0 +1,6 @@
+flask
+werkzeug
+psutil
+pyngrok
+python-dotenv
+Pillow
