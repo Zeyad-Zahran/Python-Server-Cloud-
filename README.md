@@ -1,0 +1,122 @@
+markdown
+# ☁️ Simple Cloud Server API v2.0
+
+A powerful, lightweight REST API for self-hosted cloud storage with automatic Ngrok tunnel integration.
+
+## ⚡ Quick Install & Run
+
+```bash
+# 1. Install dependencies
+pip install flask flask-cors werkzeug psutil pyngrok Pillow python-dotenv
+
+# 2. Run server
+python app.py
+🔑 Ngrok Token Setup
+Where to put your Ngrok token:
+Method 1: .env file (Recommended)
+
+bash
+# Create .env file
+echo "NGROK_AUTH_TOKEN=your_token_here" > .env
+Method 2: Environment variable
+
+bash
+# Windows
+set NGROK_AUTH_TOKEN=your_token_here
+
+# Linux/Mac
+export NGROK_AUTH_TOKEN=your_token_here
+Method 3: Hardcode in app.py
+
+python
+# Find this line in app.py
+NGROK_AUTH_TOKEN = os.getenv('NGROK_AUTH_TOKEN', 'your_token_here')
+Get your free Ngrok token:
+Sign up at https://ngrok.com
+
+Go to https://dashboard.ngrok.com/get-started/your-authtoken
+
+Copy your authtoken
+
+Paste in .env file
+
+📡 API Endpoints
+Method	Endpoint	Description
+GET	/api/storage	Disk space info
+GET	/api/files	List files
+POST	/api/upload	Upload file
+POST	/api/upload/multiple	Upload files
+GET	/api/files/{id}	Download file
+DELETE	/api/files/{id}	Delete file
+GET	/api/folders	List folders
+POST	/api/folders	Create folder
+DELETE	/api/folders/{id}	Delete folder
+GET	/api/ngrok/status	Tunnel status
+POST	/api/ngrok/reconnect	Reconnect tunnel
+GET	/api/docs	Full API docs
+🚀 Usage Examples
+Python
+python
+import requests
+
+BASE = "https://your-ngrok-url.ngrok-free.app"
+
+# Upload
+requests.post(f"{BASE}/api/upload", files={"file": open("img.jpg","rb")})
+
+# Storage
+requests.get(f"{BASE}/api/storage").json()
+cURL
+bash
+# Upload
+curl -X POST YOUR_URL/api/upload -F "file=@photo.jpg"
+
+# Storage
+curl YOUR_URL/api/storage
+
+# API Docs
+curl YOUR_URL/api/docs
+JavaScript
+javascript
+const formData = new FormData();
+formData.append('file', fileInput.files[0]);
+fetch('YOUR_URL/api/upload', {method:'POST', body:formData});
+⚙️ Configuration (.env)
+Variable	Default	Description
+NGROK_AUTH_TOKEN	-	Your ngrok token
+NGROK_ENABLED	true	Auto-start ngrok
+NGROK_REGION	us	us/eu/ap/au/sa/jp/in
+SERVER_PORT	5000	Server port
+MAX_FILE_SIZE	500	Max upload (MB)
+UPLOAD_FOLDER	uploads	Storage path
+🎯 Features
+✅ Auto Ngrok tunnel
+
+✅ Full REST API
+
+✅ File upload/download
+
+✅ Folder management
+
+✅ Disk monitoring
+
+✅ File search
+
+✅ Interactive API docs at /api/docs
+
+✅ .env configuration
+
+✅ Multiple file upload
+
+✅ File type filtering
+
+✅ Checksum verification
+
+🔒 Security
+CORS enabled for cross-origin
+
+Add authentication as needed
+
+Use HTTPS via ngrok
+
+Rate limiting recommended for production
