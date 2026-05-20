@@ -8,6 +8,8 @@ import mimetypes
 import sqlite3
 import threading
 import time
+import subprocess
+from functools import wraps
 
 try:
     from dotenv import load_dotenv
@@ -16,6 +18,42 @@ except ImportError:
     pass
 
 app = Flask(__name__)
+
+# ===================== CONFIG & SECURITY =====================
+UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'uploads')
+MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 500))
+SERVER_PORT = int(os.getenv('SERVER_PORT', 5000))
+NGROK_AUTH_TOKEN = os.getenv('NGROK_AUTH_TOKEN', '')
+NGROK_ENABLED = os.getenv('NGROK_ENABLED', 'true').lower() == 'true'
+
+# ⚠️ التوكن السري لحماية السيرفر والتحكم في الـ CMD
+# يجب إرساله في الـ Headers كـ Authorization: Bearer YourSecretToken Here
+VPS_SECRET_TOKEN = os.getenv('VPS_SECRET_TOKEN', 'vps_admin_secret_2026')
+
+ALLOWED_EXTENSIONS = {
+    'images': {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico'},
+    'videos': {'mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', '3gp'},
+    'documents': {'pdf', 'doc', 'docx', 'txt', 'xlsx', 'pptx', 'csv', 'json', 'xml'},
+    'audio': {'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'},
+    'archives': {'zip', 'rar', '7z', 'tar', 'gz'},
+    'code': {'py', 'js', 'html', 'css', 'java', 'cpp', 'php'},
+    'other': set()
+}
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE * 1024 * 1024
+Path(UPLOAD_FOLDER).mkdir(exist_ok=True)
+
+# ===================== MIDDLEWARE (AUTH) =====================
+def require_auth(f):
+    """حاجز أمني للتحقق من التوكن قبل تنفيذ العمليات الحساسة"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or auth_header != f"Bearer {VPS_SECRET_TOKEN}":
+            return jsonify({'error': 'Unauthorized: Invalid or missing VPS Secret Token'}), 401
+        return f(*args, **kwargs)
+    return decorated
 
 @app.after_request
 def add_cors_headers(response):
@@ -39,26 +77,12 @@ def handle_options(path=None):
     response.headers['Access-Control-Max-Age'] = '3600'
     return response
 
-# ===================== CONFIG =====================
-UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'uploads')
-MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 500))
-SERVER_PORT = int(os.getenv('SERVER_PORT', 5000))
-NGROK_AUTH_TOKEN = os.getenv('NGROK_AUTH_TOKEN', '')
-NGROK_ENABLED = os.getenv('NGROK_ENABLED', 'true').lower() == 'true'
-
-ALLOWED_EXTENSIONS = {
-    'images': {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico'},
-    'videos': {'mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', '3gp'},
-    'documents': {'pdf', 'doc', 'docx', 'txt', 'xlsx', 'pptx', 'csv', 'json', 'xml'},
-    'audio': {'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'},
-    'archives': {'zip', 'rar', '7z', 'tar', 'gz'},
-    'code': {'py', 'js', 'html', 'css', 'java', 'cpp', 'php'},
-    'other': set()
-}
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE * 1024 * 1024
-Path(UPLOAD_FOLDER).mkdir(exist_ok=True)
+# ===================== UTILITIES =====================
+def is_safe_path(base_folder, path_to_check):
+    """دالة أمنية تمنع الـ Path Traversal"""
+    abs_base = os.path.abspath(base_folder)
+    abs_target = os.path.abspath(path_to_check)
+    return abs_target.startswith(abs_base)
 
 # ===================== NGROK =====================
 class NgrokManager:
@@ -80,10 +104,13 @@ class NgrokManager:
             self.tunnel = ngrok.connect(port, "http")
             self.public_url = self.tunnel.public_url
             self.is_connected = True
-            print(f"\nNGROK: {self.public_url}\n")
+            print(f"\n🚀 NGROK TUNNEL CREATED: {self.public_url}\n")
             return True
         except:
             return False
+
+    def get_info(self):
+        return {"connected": self.is_connected, "public_url": self.public_url}
 
 ngrok_manager = NgrokManager()
 
@@ -107,7 +134,8 @@ def init_db():
 init_db()
 
 def get_db():
-    conn = sqlite3.connect('server.db')
+    # وضع timeout=30 لحل مشكلة قفل التزامن (Database Locked)
+    conn = sqlite3.connect('server.db', timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -134,19 +162,20 @@ def format_size(bytes_size):
         bytes_size /= 1024.0
     return f"{bytes_size:.2f} TB"
 
-# ===================== API =====================
+# ===================== CLOUD STORAGE API =====================
 
 @app.route('/')
 def root():
     base_url = ngrok_manager.public_url or request.host_url.rstrip('/')
     return jsonify({
-        'server': 'Cloud API v2.5',
+        'server': 'Cloud API & VPS Dashboard v3.0',
         'status': 'running',
         'ngrok': ngrok_manager.get_info(),
-        'endpoints': ['GET /api/storage', 'GET /api/files', 'POST /api/upload', 'POST /api/upload/multiple', 'GET /api/files/<id>', 'DELETE /api/files/<id>', 'GET /api/folders', 'POST /api/folders', 'DELETE /api/folders/<id>']
+        'vps_protected': True
     })
 
 @app.route('/api/storage', methods=['GET'])
+@require_auth
 def get_storage():
     try:
         disk = psutil.disk_usage('/')
@@ -177,6 +206,7 @@ def get_storage():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/files', methods=['GET'])
+@require_auth
 def list_files():
     try:
         conn = get_db()
@@ -211,7 +241,7 @@ def list_files():
                 'size_mb': round(f['size'] / (1024**2), 2),
                 'folder': f['folder'],
                 'upload_date': f['upload_date'],
-                'download_url': f"{base_url}/api/files/{f['id']}"
+                'download_url': f"{base_url}/api/files/{f['id']}?token={VPS_SECRET_TOKEN}"
             })
         
         return jsonify({'folder': folder, 'count': len(files_list), 'files': files_list})
@@ -219,6 +249,7 @@ def list_files():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/upload', methods=['POST'])
+@require_auth
 def upload_file():
     try:
         if 'file' not in request.files:
@@ -234,6 +265,11 @@ def upload_file():
         unique_filename = f"{timestamp}_{original_filename}"
         
         folder_path = os.path.join(app.config['UPLOAD_FOLDER'], folder.lstrip('/'))
+        
+        # حماية ضد ثغرة الـ Path Traversal للمجلدات
+        if not is_safe_path(app.config['UPLOAD_FOLDER'], folder_path):
+            return jsonify({'error': 'Access denied: Directory traversal detected'}), 403
+
         Path(folder_path).mkdir(parents=True, exist_ok=True)
         
         file_path = os.path.join(folder_path, unique_filename)
@@ -260,12 +296,13 @@ def upload_file():
             'original_name': original_filename,
             'size_mb': round(file_size / (1024**2), 2),
             'type': file_category,
-            'download_url': f"{base_url}/api/files/{file_id}"
+            'download_url': f"{base_url}/api/files/{file_id}?token={VPS_SECRET_TOKEN}"
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/upload/multiple', methods=['POST'])
+@require_auth
 def upload_multiple():
     try:
         if 'files' not in request.files:
@@ -283,6 +320,10 @@ def upload_multiple():
                     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
                     unique_filename = f"{timestamp}_{original_filename}"
                     folder_path = os.path.join(app.config['UPLOAD_FOLDER'], folder.lstrip('/'))
+                    
+                    if not is_safe_path(app.config['UPLOAD_FOLDER'], folder_path):
+                        continue
+
                     Path(folder_path).mkdir(parents=True, exist_ok=True)
                     file_path = os.path.join(folder_path, unique_filename)
                     file.save(file_path)
@@ -301,7 +342,7 @@ def upload_multiple():
                         'file_id': file_id,
                         'original_name': original_filename,
                         'size_mb': round(file_size / (1024**2), 2),
-                        'download_url': f"{base_url}/api/files/{file_id}"
+                        'download_url': f"{base_url}/api/files/{file_id}?token={VPS_SECRET_TOKEN}"
                     })
                 except:
                     pass
@@ -312,13 +353,20 @@ def upload_multiple():
 
 @app.route('/api/files/<int:file_id>', methods=['GET'])
 def download_file(file_id):
+    # للتحميل المباشر من المتصفح نقبل الـ Token برابط الـ URL (Query Parameter) لسهولة التعامل
+    token = request.args.get('token')
+    if token != VPS_SECRET_TOKEN:
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         conn = get_db()
         file = conn.execute('SELECT * FROM files WHERE id = ?', (file_id,)).fetchone()
         conn.close()
         if not file:
             return jsonify({'error': 'File not found'}), 404
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file['filename'])
+            
+        folder_path = os.path.join(app.config['UPLOAD_FOLDER'], file['folder'].lstrip('/'))
+        file_path = os.path.join(folder_path, file['filename'])
+        
         if not os.path.exists(file_path):
             return jsonify({'error': 'File not on disk'}), 404
         return send_file(file_path, as_attachment=True, download_name=file['original_name'])
@@ -326,6 +374,7 @@ def download_file(file_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/files/<int:file_id>', methods=['DELETE'])
+@require_auth
 def delete_file(file_id):
     try:
         conn = get_db()
@@ -333,9 +382,13 @@ def delete_file(file_id):
         if not file:
             conn.close()
             return jsonify({'error': 'File not found'}), 404
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file['filename'])
+            
+        folder_path = os.path.join(app.config['UPLOAD_FOLDER'], file['folder'].lstrip('/'))
+        file_path = os.path.join(folder_path, file['filename'])
+        
         if os.path.exists(file_path):
             os.remove(file_path)
+            
         conn.execute('DELETE FROM files WHERE id = ?', (file_id,))
         conn.commit()
         conn.close()
@@ -344,6 +397,7 @@ def delete_file(file_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/folders', methods=['GET'])
+@require_auth
 def list_folders():
     try:
         conn = get_db()
@@ -358,6 +412,7 @@ def list_folders():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/folders', methods=['POST'])
+@require_auth
 def create_folder():
     try:
         data = request.get_json()
@@ -366,7 +421,12 @@ def create_folder():
         folder_name = secure_filename(data['name'])
         parent = data.get('parent', '/')
         folder_path = f"{parent}/{folder_name}" if parent != '/' else f"/{folder_name}"
-        Path(os.path.join(UPLOAD_FOLDER, folder_path.lstrip('/'))).mkdir(parents=True, exist_ok=True)
+        
+        actual_disk_path = os.path.join(UPLOAD_FOLDER, folder_path.lstrip('/'))
+        if not is_safe_path(UPLOAD_FOLDER, actual_disk_path):
+            return jsonify({'error': 'Access Denied'}), 403
+
+        Path(actual_disk_path).mkdir(parents=True, exist_ok=True)
         conn = get_db()
         try:
             conn.execute('INSERT INTO folders (name, path) VALUES (?, ?)', (folder_name, folder_path))
@@ -381,6 +441,7 @@ def create_folder():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/folders/<int:folder_id>', methods=['DELETE'])
+@require_auth
 def delete_folder(folder_id):
     try:
         conn = get_db()
@@ -388,26 +449,132 @@ def delete_folder(folder_id):
         if not folder:
             conn.close()
             return jsonify({'error': 'Folder not found'}), 404
+            
         actual = os.path.join(UPLOAD_FOLDER, folder['path'].lstrip('/'))
+        if not is_safe_path(UPLOAD_FOLDER, actual):
+            conn.close()
+            return jsonify({'error': 'Forbidden'}), 403
+
         if os.path.exists(actual):
             import shutil
             shutil.rmtree(actual)
+            
         conn.execute('DELETE FROM folders WHERE id = ?', (folder_id,))
-        conn.execute('DELETE FROM files WHERE folder = ?', (folder['path'],))
+        # إصلاح المشكلة المنطقية: حذف كافة الملفات داخل هذا المجلد والمسارات الفرعية التابعة له في الـ DB
+        conn.execute('DELETE FROM files WHERE folder = ? OR folder LIKE ?', (folder['path'], f"{folder['path']}/%"))
         conn.commit()
         conn.close()
-        return jsonify({'success': True, 'message': f"Deleted folder: {folder['name']}"})
+        return jsonify({'success': True, 'message': f"Deleted folder and its contents: {folder['name']}"})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# ===================== MAIN =====================
+
+# ===================== 🔥 NEW: VPS CONTROL & CMD API 🔥 =====================
+
+@app.route('/api/vps/status', methods=['GET'])
+@require_auth
+def get_vps_status():
+    """مراقبة الموارد الحية للسيرفر (CPU, RAM, OS)"""
+    try:
+        return jsonify({
+            'cpu': {
+                'usage_percent': psutil.cpu_percent(interval=0.5),
+                'cores': psutil.cpu_count(logical=False),
+                'threads': psutil.cpu_count(logical=True)
+            },
+            'memory': {
+                'total_gb': round(psutil.virtual_memory().total / (1024**3), 2),
+                'available_gb': round(psutil.virtual_memory().available / (1024**3), 2),
+                'used_percent': psutil.virtual_memory().percent
+            },
+            'os': {
+                'boot_time': datetime.fromtimestamp(psutil.boot_time()).strftime('%Y-%m-%d %H:%M:%S'),
+                'pid_count': len(psutil.pids()),
+                'current_server_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vps/terminal', methods=['POST'])
+@require_auth
+def execute_command():
+    """تنفيذ أوامر CMD على خادم الكلاود مباشرة"""
+    data = request.get_json()
+    if not data or 'command' not in data:
+        return jsonify({'error': 'No command provided'}), 400
+        
+    command = data['command']
+    
+    # قائمة لحظر بعض الأوامر الكارثية تجنباً للأخطاء البشرية أثناء تجربة الـ API
+    banned_keywords = ['rm -rf /', 'del /f /q /s', 'format']
+    if any(banned in command.lower() for banned in banned_keywords):
+        return jsonify({'error': 'Command blocked: Dangerous operation detected!'}), 403
+        
+    try:
+        # تنفيذ الأمر مع وضع مهلة 30 ثانية لكي لا يعلق الخادم
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        return jsonify({
+            'stdout': result.stdout,
+            'stderr': result.stderr,
+            'exit_code': result.returncode
+        }), 200
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Command execution timed out (Max 30s)'}), 504
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vps/processes', methods=['GET'])
+@require_auth
+def list_processes():
+    """عرض أعلى 20 عملية تستهلك موارد السيرفر حالياً"""
+    try:
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent']):
+            try:
+                processes.append(proc.info)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+        # الترتيب تنازلياً حسب استهلاك المعالج
+        processes = sorted(processes, key=lambda x: x['cpu_percent'] or 0, reverse=True)[:20]
+        return jsonify({'count': len(processes), 'processes': processes})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vps/processes/kill', methods=['POST'])
+@require_auth
+def kill_process():
+    """إغلاق أي عملية معلقة أو مستهلكة للموارد عبر الـ PID"""
+    data = request.get_json()
+    if not data or 'pid' not in data:
+        return jsonify({'error': 'PID is required'}), 400
+    try:
+        pid = int(data['pid'])
+        proc = psutil.Process(pid)
+        proc.terminate() # محاولة إغلاق آمن أولاً
+        return jsonify({'success': True, 'message': f"Process {pid} ({proc.name()}) has been terminated."})
+    except psutil.NoSuchProcess:
+        return jsonify({'error': 'Process not found'}), 404
+    except psutil.AccessDenied:
+        return jsonify({'error': 'Access denied to terminate this process'}), 403
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===================== MAIN EXECUTION =====================
 if __name__ == '__main__':
     if NGROK_ENABLED and NGROK_AUTH_TOKEN:
         threading.Thread(target=ngrok_manager.connect, args=(SERVER_PORT, NGROK_AUTH_TOKEN), daemon=True).start()
         time.sleep(2)
     
-    print(f"\nServer: http://localhost:{SERVER_PORT}")
-    if ngrok_manager.is_connected:
-        print(f"Public: {ngrok_manager.public_url}")
+    print(f"\n⚙️ VPS SERVER RUNNING AT: http://localhost:{SERVER_PORT}")
+    print(f"🔒 API SECRET TOKEN ACTIVE: {VPS_SECRET_TOKEN}")
     
     app.run(host='0.0.0.0', port=SERVER_PORT, debug=False)
